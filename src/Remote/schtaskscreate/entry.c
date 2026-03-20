@@ -192,7 +192,7 @@ DWORD createTask(const wchar_t * server, wchar_t * taskpath, const wchar_t* xmld
 
 	// Initialize COM
 	hr = OLE32$CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-	if(FAILED(hr))
+	if (FAILED(hr) && hr != RPC_E_CHANGED_MODE)
 	{
 		internal_printf("Failed to initialize COM (%lX)\n", hr);
 		goto createTask_end;
