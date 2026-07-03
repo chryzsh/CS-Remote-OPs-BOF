@@ -256,6 +256,36 @@ DWORD WINAPI ListenServer(void * _ctx)
 
 #pragma region client
 
+//URL-encode for application/x-www-form-urlencoded. Caller must intFree the result.
+static char * url_encode(const char * in)
+{
+	if (in == NULL) return NULL;
+	static const char hex[] = "0123456789ABCDEF";
+	DWORD inlen = MSVCRT$strlen(in);
+	char * out = intAlloc(inlen * 3 + 1);
+	if (out == NULL) return NULL;
+	DWORD j = 0;
+	for (DWORD i = 0; i < inlen; i++)
+	{
+		unsigned char c = (unsigned char)in[i];
+		if (c == ' ')
+		{
+			out[j++] = '+';
+		}
+		else if (c != 0 && MSVCRT$strchr(allowed_chars, c) != NULL)
+		{
+			out[j++] = (char)c;
+		}
+		else
+		{
+			out[j++] = '%';
+			out[j++] = hex[(c >> 4) & 0x0F];
+			out[j++] = hex[c & 0x0F];
+		}
+	}
+	out[j] = 0;
+	return out;
+}
 
 int RequestToken(
 	flow_args* args,
@@ -264,10 +294,11 @@ int RequestToken(
 {
 	//client_id, scope, code, redir_uri, plaintext PKCE
 	char redir_uri[64] = { 0 };
-	const char * postFmt = "client_id=%s&scope=%s&code=%s&redirect_uri=%s&grant_type=authorization_code&code_verifier=%s";
+	const char * postFmt = "client_id=%s&scope=%s&code=%s&redirect_uri=%s&grant_type=authorization_code&code_verifier=%s&client_info=1";
 	char * postData = intAlloc(4096);
+	char * encoded_scope = url_encode(args->scope);
 	MSVCRT$_snprintf(redir_uri, 64, "%s%d", "http%3A%2F%2Flocalhost%3A", context->port);
-	DWORD length = MSVCRT$_snprintf(postData, 4096, postFmt, args->client_id, "https%3A%2F%2Fmanagement.core.windows.net%2F%2F.default+offline_access+openid+profile", context->authcode, redir_uri, context->PKCE);
+	DWORD length = MSVCRT$_snprintf(postData, 4096, postFmt, args->client_id, encoded_scope ? encoded_scope : "", context->authcode, redir_uri, context->PKCE);
 	//Might want to check that user agent
 	HANDLE hSession = CHECK_RETURN_NULL(WINHTTP$WinHttpOpen(L"azsdk-net-Identity.Broker/1.1.0 (.NET 9.0.1; ur mum Edition)",
 		WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
@@ -295,10 +326,11 @@ WINHTTP_ADDREQ_FLAG_ADD));
 	CHECK_RETURN_FAIL_BOOL(WINHTTP$WinHttpReadData(hRequest, context->tokens, 16184, &(context->tokensLen)));
 	fail:
 	if (postData) intFree(postData);
+	if (encoded_scope) intFree(encoded_scope);
 	if (hRequest) WINHTTP$WinHttpCloseHandle(hRequest);
 	if (hConnect) WINHTTP$WinHttpCloseHandle(hConnect);
 	if (hSession) WINHTTP$WinHttpCloseHandle(hSession);
-}	
+}
 
 
 void StartAuthCodeFlow(flow_args * args, ctx * context)
